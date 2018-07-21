@@ -1,0 +1,475 @@
+;; The first three lines of this file were inserted by DrRacket. They record metadata
+;; about the language level of this file in a form that our tools can easily process.
+#reader(lib "htdp-intermediate-reader.ss" "lang")((modname CSC104.2015F.Project.II) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f () #f)))
+; ★★★ Poetry Syllable Form Checker ★★★
+
+; This project is a program that lets the user choose:
+;   • A file containing a poem.
+;   • A file containing:
+;     • the name of a poetry form
+;     • the number of syllables each line of the poetry form requires
+; The program then reports whether the poem has the correct number of syllables in each line.
+
+; For examples of a Haiku and aLimkerick look at the files "a-haihu.txt" and "a-limerick.txt".
+; For examples of poetry syllable form description look at "haiku-form.txt" and "limerick-form.txt".
+
+
+; ★ What to do: under each heading below that starts with exactly one "★" do the numbered steps.
+;   There will be 1, 2, or 3 steps listed immediately under the "★".
+
+
+; ★★ The CMU Pronouncing Dictionary ★★
+
+; The pronunciation of words will be determined from the CMU Pronouncing Dictionary:
+;   http://www.speech.cs.cmu.edu/cgi-bin/cmudict
+
+; The current version of the dictionary we'll use is:
+;   http://svn.code.sf.net/p/cmusphinx/code/trunk/cmudict/cmudict-0.7b
+
+
+; ★ Importing the Dictionary ★
+; 1. Save that file "cmuduct-0.7b" and this Racket project file in the same directory or folder
+;     on your computer.
+
+; The following two lines then read in the dictionary as a list of lists of strings:
+(require 2htdp/batch-io)
+(define CMU (read-words/line "cmudict-0.7b"))
+
+; The result is a list of lists of strings.
+;   CMU : list-of-list-of-strings
+
+; For example, the element at index 10000 is the dictionary entry for the word "beings":
+(check-expect (list-ref CMU 10000) (list "BEINGS" "B" "IY1" "IH0" "NG" "Z"))
+
+; The first element of that list is the word "beings" in upper-case, followed by a list of phonemes
+;  that represent the sounds to pronounce the word "beings".
+; Vowel sounds are represented by strings that end with "0", "1", or "2".
+; If you are interested in the details of the sound representation take a look at the information
+;  on the CMU Pronouncing Dictionary Web Site.
+
+
+; ★★ filter-2 ★★
+
+; The function 'filter-2' will be useful for one of the functions you'll write.
+;
+;   (filter-2 p value (list a b c ... z))
+;
+; It produces the sub-list of (list a b c ... z) with the elements a b c ... z for which
+;  (p value a) (p value b) (p value c) ... (p value z) are #true.
+
+; For example:
+(check-expect (filter-2 < 100 (list 23 104 56 789 104))
+              ; (not (< 100  23))
+              ;      (< 100 104)
+              ; (not (< 100  56))
+              ;      (< 100 789)
+              ;      (< 100 104).
+              ; So the result is:
+              (list 104 789 104))
+(check-expect (filter-2 = 104 (list 23 104 56 789 104))
+              (list 104 104))
+;
+; filter-2 : binary-predicate any list -> list
+(define (filter-2 binary-predicate a-value a-list)
+  (local [(define (unary-predicate an-element)
+            (binary-predicate a-value an-element))]
+    (filter unary-predicate a-list)))
+
+
+; ★★ 'choose-file' and 'message' ★★
+
+; ★ The "GUI.rkt" helper file ★
+; 1. Save the file "GUI.rkt" from the course website into the same directory or folder on your
+;     computer where you saved the cmu dictionary and this Racket project file.
+
+; The following expression then gives you access to the functions 'choose-file' and 'message':
+(require "GUI.rkt")
+
+; The 'choose-file' and 'message' functions are used later in this project.
+
+; The 'choose-file' function takes a title string, and brings up a window with that title, asking
+;  the user to choose a file.
+;
+;   choose-file : string -> string
+;
+; The result is the name of the file as a string.
+
+; The 'message' function takes a title string and a contents string, and pops up a window with that
+;  title and the contents.
+;
+;   message : string string -> string
+
+
+; ★★ string-ci=? ★★
+
+; The Intermediate Student function 'string-ci=?' [meaning "string Case Insensitive equal?"] will be
+;  useful for one of the functions you'll write.
+
+;   string-ci=? : string string ... -> boolean
+
+; It compares whether strings are the same, ignoring upper verus lower case.
+
+; For example:
+(check-expect (string-ci=? "HelLo" "helLO") #true)
+(check-expect      (equal? "HelLo" "helLO") #false)
+;
+(check-expect (string-ci=? "Hello" "Hello") #true)
+(check-expect      (equal? "Hello" "Hello") #true)
+;
+(check-expect (string-ci=? "Hi" "Ha") #false)
+(check-expect      (equal? "Hi" "Ha") #false)
+
+
+; ★★ string->number ★★
+
+; The Intermediate Student function 'string->number' will be useful for one of the functions
+;  you'll write. It takes a string representation of a number and produces the number.
+
+;   string->number : string -> number
+
+; For example:
+(check-expect (string->number "7") 7)
+(check-expect (string->number "104") 104)
+
+
+; ★★ string->characters ★★
+
+; The function 'string->characters' will be useful for one of the functions you'll write.
+; It turns a string into a list of its characters, as strings of length one.
+
+; For example:
+(check-expect
+ (string->characters "Human beings united.")
+ (list "H" "u" "m" "a" "n" " " "b" "e" "i" "n" "g" "s" " " "u" "n" "i" "t" "e" "d" "."))
+
+; string->characters : string -> list-of-strings
+(define (string->characters a-string)
+  (local [(define (character-ref i) (substring a-string i (add1 i)))]
+    (map character-ref (range 0 (string-length a-string) 1))))
+
+
+; ★ word-entry? ★
+
+; 1. Write a full design 'check-expect'.
+; 2. Fill in the contract.
+; 3. Fix the body.
+
+(check-expect (word-entry? "beings" (list "BEINGS" "B" "IY1" "IH0" "NG" "Z"))
+              #true)
+(check-expect (word-entry? "beings" (list "BEINGS" "B" "IY1" "IH0" "NG" "Z"))
+              (string-ci=? "beings" "BEINGS"))
+(check-expect (word-entry? "human" (list "BEINGS" "B" "IY1" "IH0" "NG" "Z"))
+              #false)
+(check-expect (word-entry? "human" (list "BEINGS" "B" "IY1" "IH0" "NG" "Z"))
+              (string-ci=? "human" "BEINGS"))
+(check-expect (word-entry? "human" (list "HUMAN" "HH" "Y" "UW1" "M" "AH0" "N"))
+              #true)
+(check-expect (word-entry? "human" (list "HUMAN" "HH" "Y" "UW1" "M" "AH0" "N"))
+              (string-ci=? "human" "HUMAN"))
+(check-expect (word-entry? "beings" (list "HUMAN" "HH" "Y" "UW1" "M" "AH0" "N"))
+              (string-ci=? "beings" "HUMAN"))
+
+
+
+; word-entry? :
+; Whether 'entry' is in the form of a dictionary entry for 'word'.
+(define (word-entry? word entry)
+  ....)
+
+
+; ★ lookup-entry ★
+
+; 1. Fill in the contract.
+; 2. Fix the body.
+
+(check-expect (lookup-entry "beings")
+              (list "BEINGS" "B" "IY1" "IH0" "NG" "Z"))
+(check-expect (lookup-entry "human")
+              (list "HUMAN" "HH" "Y" "UW1" "M" "AH0" "N"))
+(check-expect (lookup-entry "beings")
+              (first (filter-2 word-entry? "beings" CMU)))
+(check-expect (lookup-entry "human")
+              (first (filter-2 word-entry? "human" CMU)))
+
+; lookup-entry :
+; The CMU dictionary entry for 'word'.
+(define (lookup-entry word)
+  ....)
+
+
+; ★ word->phonemes ★
+
+; 1. Write a full design 'check-expect'.
+; 2. Fill in the contract.
+; 3. Fix the body.
+
+(check-expect (word->phonemes "beings") (list "B" "IY1" "IH0" "NG" "Z"))
+(check-expect (word->phonemes "human") (list "HH" "Y" "UW1" "M" "AH0" "N"))
+
+
+
+; word->phonemes :
+; The phonemes for 'word'.
+(define (word->phonemes word)
+  ....)
+
+
+; ★ line->phonemes ★
+
+; 1. Write a full design 'check-expect'.
+; 2. Fill in the contract.
+; 3. Fix the body.
+
+(check-expect (line->phonemes (list "Human" "beings"))
+              (list "HH" "Y" "UW1" "M" "AH0" "N"
+                    "B" "IY1" "IH0" "NG" "Z"))
+(check-expect (line->phonemes (list "Human" "beings" "united"))
+              (list "HH" "Y" "UW1" "M" "AH0" "N"
+                    "B" "IY1" "IH0" "NG" "Z"
+                    "Y" "UW0" "N" "AY1" "T" "AH0" "D"))
+(check-expect (line->phonemes (list "Human" "beings" "united"))
+              (append (list "HH" "Y" "UW1" "M" "AH0" "N")
+                      (list "B" "IY1" "IH0" "NG" "Z")
+                      (list "Y" "UW0" "N" "AY1" "T" "AH0" "D")))
+(check-expect (line->phonemes (list "Human" "beings" "united"))
+              (append (word->phonemes "Human")
+                      (word->phonemes "beings")
+                      (word->phonemes "united")))
+
+
+
+; line->phonemes :
+; The phonemes for the words in 'line'.
+(define (line->phonemes line)
+  ....)
+
+
+; ★ vowel? ★
+
+; 1. Fill in the contract.
+; 2. Fix the body.
+
+(check-expect (vowel? "B") #false)
+(check-expect (vowel? "B") (member? (substring "B" (sub1 (string-length "B")))
+                                    (list "0" "1" "2")))
+(check-expect (vowel? "IY1") #true)
+(check-expect (vowel? "IY1") (member? (substring "IY1" (sub1 (string-length "IY1")))
+                                      (list "0" "1" "2")))
+
+; vowel? :
+; Whether 'a-phoneme' represents a vowel.
+(define (vowel? a-phoneme)
+  ....)
+
+
+; ★ number-of-vowels ★
+
+; 1. Write a full design 'check-expect'.
+; 2. Fill in the contract.
+; 3. Fix the body.
+
+(check-expect (number-of-vowels (list "Human" "beings"))
+              4)
+(check-expect (number-of-vowels (list "Human" "beings"))
+              (length (list "UW1" "AH0" "IY1" "IH0")))
+(check-expect (number-of-vowels (list "Human" "beings" "united"))
+              7)
+(check-expect (number-of-vowels (list "Human" "beings" "united"))
+              (length (list "UW1" "AH0" "IY1" "IH0" "UW0" "AY1" "AH0")))
+
+
+
+; number-of-vowels :
+; The total number of vowels in the words in 'line'.
+(define (number-of-vowels line)
+  ....)
+
+
+; ★ compare-syllables ★
+
+; 1. Write a full design 'check-expect'.
+; 2. Fill in the contract.
+; 3. Fix the body.
+
+(check-expect
+ (compare-syllables
+  (list (list "Cherry" "blossoms" "bloom")
+        (list "softly" "falling" "from" "the" "tree")
+        (list "explode" "into" "night"))
+  (list 5 7 5))
+ #true)
+
+(check-expect
+ (compare-syllables
+  (list (list "Cherry" "blossoms" "bloom")
+        (list "softly" "falling" "from" "the" "tree")
+        (list "explode" "into" "night"))
+  (list 8 8 5 5 8))
+ #false)
+
+(check-expect
+ (compare-syllables
+  (list
+   (list "I" "wish" "I" "had" "thought" "of" "a" "rhyme")
+   (list "Before" "I" "ran" "all" "out" "of" "time")
+   (list "I'll" "sit" "here" "instead")
+   (list "A" "cloud" "on" "my" "head")
+   (list "That" "rains" "'til" "I'm" "covered" "with" "slime"))
+  (list 5 7 5))
+ #false)
+
+(check-expect
+ (compare-syllables
+  (list
+   (list "I" "wish" "I" "had" "thought" "of" "a" "rhyme")
+   (list "Before" "I" "ran" "all" "out" "of" "time")
+   (list "I'll" "sit" "here" "instead")
+   (list "A" "cloud" "on" "my" "head")
+   (list "That" "rains" "'til" "I'm" "covered" "with" "slime"))
+  (list 8 8 5 5 8))
+ #true)
+
+
+
+; compare-syllables :
+; Whether each line of 'poem' has the number of vowels listed in 'syllables'.
+(define (compare-syllables poem syllables)
+  (equal? poem syllables))
+
+
+; ★ letter-or-apostrophe? ★
+
+; 1. Fill in the contract.
+; 2. Fix the body.
+
+(check-expect (letter-or-apostrophe? "g") #true)
+(check-expect (letter-or-apostrophe? "g") (or (string-alphabetic? "g")
+                                              (equal? "g" "'")))
+(check-expect (letter-or-apostrophe? "7") #false)
+(check-expect (letter-or-apostrophe? "7") (or (string-alphabetic? "7")
+                                              (equal? "7" "'")))
+(check-expect (letter-or-apostrophe? "'") #true)
+(check-expect (letter-or-apostrophe? "'") (or (string-alphabetic? "'")
+                                              (equal? "'" "'")))
+(check-expect (letter-or-apostrophe? "!") #false)
+(check-expect (letter-or-apostrophe? "!") (or (string-alphabetic? "!")
+                                              (equal? "!" "'")))
+
+; letter-or-apostrophe? :
+; Whether 's' contains only letters, or is an apostrophe.
+(define (letter-or-apostrophe? s)
+  ....)
+
+
+; ★ de-punctuate-word ★
+
+; 1. Fill in the contract.
+; 2. Fix the body.
+
+(check-expect (de-punctuate-word "bloom,") "bloom")
+(check-expect (de-punctuate-word "bloom,")
+              (apply string-append (filter letter-or-apostrophe? (string->characters "bloom,"))))
+(check-expect (de-punctuate-word "I'm") "I'm")
+(check-expect (de-punctuate-word "I'm")
+              (apply string-append (filter letter-or-apostrophe? (string->characters "I'm"))))
+
+; de-punctuate-word :
+; 'word' with only its letters and apostrophes.
+(define (de-punctuate-word word)
+  "fix")
+
+
+; ★ de-punctuate-words ★
+
+; 1. Write a full design 'check-expect'.
+; 2. Fill in the contract.
+; 3. Fix the body.
+
+(check-expect (de-punctuate-words (list "That" "rains" "'til" "I'm" "covered" "with" "slime"))
+              (list "That" "rains" "'til" "I'm" "covered" "with" "slime"))
+(check-expect (de-punctuate-words (list "Teach" "us," "Sprite" "or" "Bird,"))
+              (list "Teach" "us" "Sprite" "or" "Bird"))
+(check-expect (de-punctuate-words (list "Teach" "us," "Sprite" "or" "Bird,"))
+              (list (de-punctuate-word "Teach")
+                    (de-punctuate-word "us,")
+                    (de-punctuate-word "Sprite")
+                    (de-punctuate-word "or")
+                    (de-punctuate-word "Bird,")))
+
+
+
+; de-punctuate-words :
+; 'words' with each word in it reduced to just its letters and apostrophes.
+(define (de-punctuate-words words)
+  ....)
+
+
+; ★ de-punctuate-poem ★
+
+; 1. Write a full design 'check-expect'.
+; 2. Fill in the contract.
+; 3. Fix the body.
+
+(check-expect (de-punctuate-poem
+               (list (list "Teach" "us," "Sprite" "or" "Bird,")
+                     (list "What" "sweet" "thoughts" "are" "thine:")
+                     (list "I" "have" "never" "heard")
+                     (list "Praise" "of" "love" "or" "wine")
+                     (list "That" "panted" "forth" "a" "flood" "of" "rapture" "so" "divine.")))
+              (list
+               (list "Teach" "us" "Sprite" "or" "Bird")
+               (list "What" "sweet" "thoughts" "are" "thine")
+               (list "I" "have" "never" "heard")
+               (list "Praise" "of" "love" "or" "wine")
+               (list "That" "panted" "forth" "a" "flood" "of" "rapture" "so" "divine")))
+(check-expect (de-punctuate-poem
+               (list
+                (list "Cherry" "blossoms" "bloom,")
+                (list "softly" "falling" "from" "the" "tree,")
+                (list "explode" "into" "night.")))
+              (list (list "Cherry" "blossoms" "bloom")
+                    (list "softly" "falling" "from" "the" "tree")
+                    (list "explode" "into" "night")))
+
+
+
+; de-punctuate-poem :
+; 'poem' with each word in each line of words reduced to just its letters and apostrophes.
+(define (de-punctuate-poem poem)
+  ....)
+
+
+; ★ Running the Whole Program ★
+
+; 1. When everything else is done, uncomment the last expression below and run the program.
+;
+; You can then choose:
+;   A file containing a poem (e.g. the file "a-haiku.txt" from the course website).
+; Then choose:
+;   A file containing the name of a poem form and the expected number of syllables per line
+;    (e.g. the file "haiku-form.txt").
+;
+; A message will pop up stating whether the poem has the expected number of syllables per line.
+
+(define (ask-forever _)
+  (local [(define poem-file (choose-file "Poem"))
+          (define raw-poem (read-file poem-file))
+          (define poem (de-punctuate-poem (read-words/line poem-file)))
+          (define poem-form (first (read-words-and-numbers/line (choose-file "Syllable Counts"))))
+          (define next-line "\n")]
+    (ask-forever
+     (message "Poetry Syllable Counts"
+              (string-append "The poem"
+                             next-line
+                             next-line
+                             raw-poem
+                             next-line
+                             next-line
+                             " has the "
+                             (cond [(compare-syllables poem (rest poem-form)) "correct"]
+                                   [else "incorrect"])
+                             " number of syllables per line for a "
+                             (first poem-form)
+                             ".")))))
+
+; (ask-forever "ignored")
